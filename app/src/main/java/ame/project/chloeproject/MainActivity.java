@@ -1,14 +1,16 @@
 package ame.project.chloeproject;
 
 import android.Manifest;
-import android.content.SharedPreferences;
+import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.media.MediaPlayer;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Size;
@@ -21,7 +23,6 @@ import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -44,64 +45,72 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import ame.project.chloeproject.Sensor.MouthAnalyzer;
 
+/**
+ * Aktivitas utama untuk Chloe Project.
+ * Menampilkan avatar 2D yang dapat merespons gerak bibir dari kamera secara real-time.
+ */
 public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Listener {
 
-    private static final int[] BG_COLORS = {0xFF00FF00, 0xFF000000, 0xFFFFFFFF, 0xFF0000FF, 0xFF808080};
-    private static final String[] BG_NAMES = {"Hijau (chroma key)", "Hitam", "Putih", "Biru (chroma key)", "Abu-abu"};
+    // Konstanta Latar Belakang
+    public static final int[] BG_COLORS = {0xFF00FF00, 0xFF000000, 0xFFFFFFFF, 0xFF0000FF, 0xFF808080};
+    public static final String[] BG_NAMES = {"Hijau (chroma key)", "Hitam", "Putih", "Biru (chroma key)", "Abu-abu"};
 
-    private static final int BG_MODE_COLOR = 0;
-    private static final int BG_MODE_IMAGE = 1;
-    private static final int BG_MODE_VIDEO = 2;
+    public static final int BG_MODE_COLOR = 0;
+    public static final int BG_MODE_IMAGE = 1;
+    public static final int BG_MODE_VIDEO = 2;
 
-    private static final String FILE_TALK = "img_talk.png";
-    private static final String FILE_IDLE = "img_idle.png";
-    private static final String FILE_BG_IMG = "bg_image.png";
-    private static final String FILE_BG_VID = "bg_video.mp4";
+    // Nama File Penyimpanan
+    public static final String FILE_TALK = "img_talk.png";
+    public static final String FILE_IDLE = "img_idle.png";
+    public static final String FILE_BG_IMG = "bg_image.png";
+    public static final String FILE_BG_VID = "bg_video.mp4";
 
     private static final int MAX_IMG_SIZE = 1024;
     private static final long HOLD_MS = 120;
-    private static final float CLICK_THRESHOLD = 15f; // Threshold drag vs tap (px)
+    private static final float CLICK_THRESHOLD = 15f;
 
-    private interface OnValue { void on(int value); }
+    private interface OnSeekBarChangeCallback { void onChange(int value); }
 
-    // View utama
-    private FrameLayout root, stage;
-    private ImageView imgIdle, imgTalk, bgImageView;
-    private VideoView bgVideoView;
+    // Views Utama
+    private FrameLayout root;
+    private FrameLayout stage;
+    private ImageView imgIdle;
+    private ImageView imgTalk;
+    private ImageView bgImageView;
+    private FullScreenVideoView bgVideoView;
     private PreviewView previewView;
     private TextView tvDebug;
 
-    // View BottomSheet
+    // View BottomSheet Pengaturan
     private BottomSheetDialog settingsDialog;
     private TextView tvSens, tvSize, tvIn, tvOut, tvBgInfo;
     private SeekBar sbSens, sbSize, sbIn, sbOut;
 
-    // State
-    private SharedPreferences prefs;
+    // Helpers & Managers
+    private AppPreferences prefs;
     private ProcessCameraProvider cameraProvider;
     private MouthAnalyzer analyzer;
+
     private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
 
-    private boolean useFront = true;
-    private boolean showPreview = false;
-    private int bgIndex = 0;
-    private int bgMode = BG_MODE_COLOR;
+    // State
     private boolean talking = false;
     private float smooth = 0f;
     private long lastOpenAt = 0;
 
-    // Touch Dragging State
+    // Touch Drag State
     private float dX, dY;
     private float startX, startY;
     private boolean isDragging = false;
 
-    // Activity result launchers
+    // Activity Result Launchers
     private final ActivityResultLauncher<String> pickTalk = registerForActivityResult(
             new ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) importImage(uri, FILE_TALK);
@@ -124,20 +133,40 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
 
     private final ActivityResultLauncher<String> permLauncher = registerForActivityResult(
             new ActivityResultContracts.RequestPermission(), granted -> {
-                if (granted) startCamera();
-                else Toast.makeText(this, "Izin kamera diperlukan", Toast.LENGTH_LONG).show();
+                if (granted) {
+                    startCamera();
+                } else {
+                    Toast.makeText(this, "Izin kamera diperlukan", Toast.LENGTH_LONG).show();
+                }
             });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getWindow().getAttributes().layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_main);
         hideSystemUI();
 
-        prefs = getSharedPreferences("cfg", MODE_PRIVATE);
+        prefs = new AppPreferences(this);
+        analyzer = new MouthAnalyzer(this);
 
+        initViews();
+        restoreAvatarPosition();
+        setupStageTouch();
+
+        applyBg();
+        applySize();
+        applyImages();
+
+        checkAndStartCamera();
+    }
+
+    private void initViews() {
         root = findViewById(R.id.root);
         stage = findViewById(R.id.stage);
         imgIdle = findViewById(R.id.imgIdle);
@@ -146,40 +175,17 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         bgVideoView = findViewById(R.id.bgVideoView);
         previewView = findViewById(R.id.previewView);
         tvDebug = findViewById(R.id.tvDebug);
+
         ImageButton btnOpenSettings = findViewById(R.id.btnOpenSettings);
-
-        // Load state tersimpan
-        useFront = prefs.getBoolean("front", true);
-        showPreview = prefs.getBoolean("preview", false);
-        bgIndex = prefs.getInt("bg", 0);
-        bgMode = prefs.getInt("bg_mode", BG_MODE_COLOR);
-
-        // Restore posisi avatar
-        float savedX = prefs.getFloat("posX", 0f);
-        float savedY = prefs.getFloat("posY", 0f);
-        stage.setTranslationX(savedX);
-        stage.setTranslationY(savedY);
-
-        // Setup touch drag pada avatar (stage)
-        setupStageTouch();
-
-        // Tombol opsi buka settings
         btnOpenSettings.setOnClickListener(v -> showSettingsDialog());
-
-        analyzer = new MouthAnalyzer(this);
-
-        applyBg();
-        applySize();
-        applyImages();
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                == PackageManager.PERMISSION_GRANTED) {
-            startCamera();
-        } else {
-            permLauncher.launch(Manifest.permission.CAMERA);
-        }
     }
 
+    private void restoreAvatarPosition() {
+        stage.setTranslationX(prefs.getPosX());
+        stage.setTranslationY(prefs.getPosY());
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
     private void setupStageTouch() {
         stage.setOnTouchListener((v, event) -> {
             switch (event.getActionMasked()) {
@@ -203,10 +209,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
 
                 case MotionEvent.ACTION_UP:
                     if (isDragging) {
-                        prefs.edit()
-                                .putFloat("posX", stage.getTranslationX())
-                                .putFloat("posY", stage.getTranslationY())
-                                .apply();
+                        prefs.setPosition(stage.getTranslationX(), stage.getTranslationY());
                     } else {
                         v.performClick();
                         showSettingsDialog();
@@ -217,7 +220,16 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         });
     }
 
-    // -------------------------------------------------------- Bottom Sheet UI
+    private void checkAndStartCamera() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED) {
+            startCamera();
+        } else {
+            permLauncher.launch(Manifest.permission.CAMERA);
+        }
+    }
+
+    // -------------------------------------------------------- Pengaturan (BottomSheet)
 
     private void showSettingsDialog() {
         if (settingsDialog == null) {
@@ -225,7 +237,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
             View sheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_settings, root, false);
             settingsDialog.setContentView(sheetView);
 
-            // Bind views di bottom sheet
+            // Bind views BottomSheet
             tvSens = sheetView.findViewById(R.id.tvSens);
             tvSize = sheetView.findViewById(R.id.tvSize);
             tvIn = sheetView.findViewById(R.id.tvIn);
@@ -237,70 +249,34 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
             sbIn = sheetView.findViewById(R.id.sbIn);
             sbOut = sheetView.findViewById(R.id.sbOut);
 
-            // Avatar buttons
+            // Tombol Avatar
             sheetView.findViewById(R.id.btnTalk).setOnClickListener(v -> pickTalk.launch("image/*"));
             sheetView.findViewById(R.id.btnIdle).setOnClickListener(v -> pickIdle.launch("image/*"));
-            sheetView.findViewById(R.id.btnReset).setOnClickListener(v -> {
-                new File(getFilesDir(), FILE_TALK).delete();
-                new File(getFilesDir(), FILE_IDLE).delete();
-                applyImages();
-                Toast.makeText(this, "Gambar reset ke default", Toast.LENGTH_SHORT).show();
-            });
+            sheetView.findViewById(R.id.btnReset).setOnClickListener(v -> resetAvatarImages());
 
-            // BG buttons
-            sheetView.findViewById(R.id.btnBgColor).setOnClickListener(v -> {
-                bgMode = BG_MODE_COLOR;
-                bgIndex = (bgIndex + 1) % BG_COLORS.length;
-                prefs.edit().putInt("bg_mode", bgMode).putInt("bg", bgIndex).apply();
-                applyBg();
-                updateBgInfo();
-            });
-
+            // Tombol BG
+            sheetView.findViewById(R.id.btnBgColor).setOnClickListener(v -> cycleBgColor());
             sheetView.findViewById(R.id.btnBgImage).setOnClickListener(v -> pickBgImage.launch("image/*"));
             sheetView.findViewById(R.id.btnBgVideo).setOnClickListener(v -> pickBgVideo.launch("video/*"));
+            sheetView.findViewById(R.id.btnBgReset).setOnClickListener(v -> resetBg());
 
-            sheetView.findViewById(R.id.btnBgReset).setOnClickListener(v -> {
-                bgMode = BG_MODE_COLOR;
-                bgIndex = 0;
-                new File(getFilesDir(), FILE_BG_IMG).delete();
-                new File(getFilesDir(), FILE_BG_VID).delete();
-                prefs.edit().putInt("bg_mode", bgMode).putInt("bg", bgIndex).apply();
-                applyBg();
-                updateBgInfo();
-                Toast.makeText(this, "BG reset ke warna hijau", Toast.LENGTH_SHORT).show();
-            });
+            // Tombol Kamera
+            sheetView.findViewById(R.id.btnCamera).setOnClickListener(v -> switchCamera());
+            sheetView.findViewById(R.id.btnPreview).setOnClickListener(v -> toggleCameraPreview());
 
-            // Camera buttons
-            sheetView.findViewById(R.id.btnCamera).setOnClickListener(v -> {
-                useFront = !useFront;
-                prefs.edit().putBoolean("front", useFront).apply();
-                bindCamera();
-            });
-
-            sheetView.findViewById(R.id.btnPreview).setOnClickListener(v -> {
-                showPreview = !showPreview;
-                prefs.edit().putBoolean("preview", showPreview).apply();
-                bindCamera();
-            });
-
-            // Position reset button
-            sheetView.findViewById(R.id.btnResetPos).setOnClickListener(v -> {
-                stage.setTranslationX(0f);
-                stage.setTranslationY(0f);
-                prefs.edit().putFloat("posX", 0f).putFloat("posY", 0f).apply();
-                Toast.makeText(this, "Posisi avatar direset ke tengah", Toast.LENGTH_SHORT).show();
-            });
+            // Tombol Reset Posisi
+            sheetView.findViewById(R.id.btnResetPos).setOnClickListener(v -> resetAvatarPosition());
 
             // SeekBars
-            sbSens.setProgress(prefs.getInt("sens", 50));
-            sbSize.setProgress(prefs.getInt("size", 80));
-            sbIn.setProgress(prefs.getInt("in", 120));
-            sbOut.setProgress(prefs.getInt("out", 250));
+            sbSens.setProgress(prefs.getSensitivity());
+            sbSize.setProgress(prefs.getSize());
+            sbIn.setProgress(prefs.getFadeIn());
+            sbOut.setProgress(prefs.getFadeOut());
 
-            bindSeek(sbSens, v -> { prefs.edit().putInt("sens", v).apply(); updateLabels(); });
-            bindSeek(sbSize, v -> { prefs.edit().putInt("size", v).apply(); applySize(); updateLabels(); });
-            bindSeek(sbIn, v -> { prefs.edit().putInt("in", v).apply(); updateLabels(); });
-            bindSeek(sbOut, v -> { prefs.edit().putInt("out", v).apply(); updateLabels(); });
+            bindSeek(sbSens, value -> { prefs.setSensitivity(value); updateLabels(); });
+            bindSeek(sbSize, value -> { prefs.setSize(value); applySize(); updateLabels(); });
+            bindSeek(sbIn, value -> { prefs.setFadeIn(value); updateLabels(); });
+            bindSeek(sbOut, value -> { prefs.setFadeOut(value); updateLabels(); });
 
             settingsDialog.setOnDismissListener(dialog -> hideSystemUI());
         }
@@ -310,21 +286,67 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         settingsDialog.show();
     }
 
+    private void resetAvatarImages() {
+        new File(getFilesDir(), FILE_TALK).delete();
+        new File(getFilesDir(), FILE_IDLE).delete();
+        applyImages();
+        Toast.makeText(this, "Gambar avatar diringkas ke default", Toast.LENGTH_SHORT).show();
+    }
+
+    private void cycleBgColor() {
+        prefs.setBgMode(BG_MODE_COLOR);
+        int nextBgIndex = (prefs.getBgIndex() + 1) % BG_COLORS.length;
+        prefs.setBgIndex(nextBgIndex);
+        applyBg();
+        updateBgInfo();
+    }
+
+    private void resetBg() {
+        prefs.setBgMode(BG_MODE_COLOR);
+        prefs.setBgIndex(0);
+        new File(getFilesDir(), FILE_BG_IMG).delete();
+        new File(getFilesDir(), FILE_BG_VID).delete();
+        applyBg();
+        updateBgInfo();
+        Toast.makeText(this, "Latar belakang direset ke warna hijau", Toast.LENGTH_SHORT).show();
+    }
+
+    private void switchCamera() {
+        boolean newUseFront = !prefs.isUseFrontCamera();
+        prefs.setUseFrontCamera(newUseFront);
+        bindCamera();
+    }
+
+    private void toggleCameraPreview() {
+        boolean newShowPreview = !prefs.isShowCameraPreview();
+        prefs.setShowCameraPreview(newShowPreview);
+        bindCamera();
+    }
+
+    private void resetAvatarPosition() {
+        stage.setTranslationX(0f);
+        stage.setTranslationY(0f);
+        prefs.setPosition(0f, 0f);
+        Toast.makeText(this, "Posisi avatar direset ke tengah", Toast.LENGTH_SHORT).show();
+    }
+
     private void updateBgInfo() {
         if (tvBgInfo == null) return;
-        if (bgMode == BG_MODE_IMAGE) {
-            tvBgInfo.setText("BG Aktif: Gambar Custom");
-        } else if (bgMode == BG_MODE_VIDEO) {
-            tvBgInfo.setText("BG Aktif: Video Custom (Loop)");
+        int mode = prefs.getBgMode();
+        if (mode == BG_MODE_IMAGE) {
+            tvBgInfo.setText(R.string.bg_active_image);
+        } else if (mode == BG_MODE_VIDEO) {
+            tvBgInfo.setText(R.string.bg_active_video);
         } else {
-            tvBgInfo.setText("BG Aktif: Warna " + BG_NAMES[bgIndex]);
+            tvBgInfo.setText(getString(R.string.bg_active_color, BG_NAMES[prefs.getBgIndex()]));
         }
     }
 
-    // ---------------------------------------------------------------- Background
+    // -------------------------------------------------------- Latar Belakang (BG)
 
     private void applyBg() {
-        if (bgMode == BG_MODE_IMAGE) {
+        int mode = prefs.getBgMode();
+        if (mode == BG_MODE_IMAGE) {
             File f = new File(getFilesDir(), FILE_BG_IMG);
             if (f.exists()) {
                 Bitmap b = BitmapFactory.decodeFile(f.getPath());
@@ -336,7 +358,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
                     return;
                 }
             }
-        } else if (bgMode == BG_MODE_VIDEO) {
+        } else if (mode == BG_MODE_VIDEO) {
             File f = new File(getFilesDir(), FILE_BG_VID);
             if (f.exists()) {
                 bgImageView.setVisibility(View.GONE);
@@ -344,18 +366,23 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
                 bgVideoView.setVideoPath(f.getPath());
                 bgVideoView.setOnPreparedListener(mp -> {
                     mp.setLooping(true);
-                    mp.setVolume(0f, 0f); // Muted video
+                    mp.setVolume(0f, 0f);
+                    mp.setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING);
+                    if (mp.getVideoWidth() > 0 && mp.getVideoHeight() > 0) {
+                        bgVideoView.setVideoSize(mp.getVideoWidth(), mp.getVideoHeight());
+                    }
+                    mp.setOnVideoSizeChangedListener((mp1, width, height) -> bgVideoView.setVideoSize(width, height));
                     bgVideoView.start();
                 });
                 return;
             }
         }
 
-        // Default: Mode Warna
+        // Mode Warna Default
         bgImageView.setVisibility(View.GONE);
         if (bgVideoView.isPlaying()) bgVideoView.stopPlayback();
         bgVideoView.setVisibility(View.GONE);
-        root.setBackgroundColor(BG_COLORS[bgIndex]);
+        root.setBackgroundColor(BG_COLORS[prefs.getBgIndex()]);
     }
 
     private void importBgImage(Uri uri) {
@@ -368,8 +395,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
                 while ((len = in.read(buf)) > 0) {
                     out.write(buf, 0, len);
                 }
-                bgMode = BG_MODE_IMAGE;
-                prefs.edit().putInt("bg_mode", bgMode).apply();
+                prefs.setBgMode(BG_MODE_IMAGE);
                 runOnUiThread(() -> {
                     applyBg();
                     updateBgInfo();
@@ -392,8 +418,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
                 while ((len = in.read(buf)) > 0) {
                     out.write(buf, 0, len);
                 }
-                bgMode = BG_MODE_VIDEO;
-                prefs.edit().putInt("bg_mode", bgMode).apply();
+                prefs.setBgMode(BG_MODE_VIDEO);
                 runOnUiThread(() -> {
                     applyBg();
                     updateBgInfo();
@@ -406,7 +431,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         });
     }
 
-    // ---------------------------------------------------------------- Kamera
+    // -------------------------------------------------------- Kamera & CameraX
 
     private void startCamera() {
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
@@ -421,24 +446,25 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         }, ContextCompat.getMainExecutor(this));
     }
 
+    @SuppressWarnings("deprecation")
     private void bindCamera() {
         if (cameraProvider == null) return;
         cameraProvider.unbindAll();
 
-        CameraSelector selector = useFront
+        CameraSelector selector = prefs.isUseFrontCamera()
                 ? CameraSelector.DEFAULT_FRONT_CAMERA
                 : CameraSelector.DEFAULT_BACK_CAMERA;
 
         ImageAnalysis analysis = new ImageAnalysis.Builder()
-                .setTargetResolution(new Size(240, 320))
+                .setTargetResolution(new Size(480, 640))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build();
         analysis.setAnalyzer(cameraExecutor, analyzer);
 
         try {
-            if (showPreview) {
+            if (prefs.isShowCameraPreview()) {
                 Preview preview = new Preview.Builder()
-                        .setTargetResolution(new Size(240, 320))
+                        .setTargetResolution(new Size(480, 640))
                         .build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
                 previewView.setVisibility(View.VISIBLE);
@@ -453,13 +479,13 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         }
     }
 
-    // ------------------------------------------------------- Deteksi -> animasi
+    // -------------------------------------------------------- Deteksi Mulut -> Animasi
 
     @Override
     public void onMouth(boolean faceFound, float openness) {
         smooth = faceFound ? (smooth * 0.5f + openness * 0.5f) : 0f;
 
-        float openT = 0.25f - 0.002f * getProgressSafe(sbSens);
+        float openT = 0.25f - 0.002f * prefs.getSensitivity();
         float closeT = openT * 0.6f;
 
         long now = SystemClock.uptimeMillis();
@@ -474,29 +500,24 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
 
         if (tvDebug != null && tvDebug.getVisibility() == View.VISIBLE) {
             tvDebug.setText(faceFound
-                    ? String.format("Mulut: %.2f  (ambang %.2f)  %s", smooth, openT, talking ? "● BICARA" : "○ diam")
+                    ? String.format(Locale.getDefault(), "Mulut: %.2f  (ambang %.2f)  %s", smooth, openT, talking ? "● BICARA" : "○ diam")
                     : "Wajah tidak terdeteksi");
         }
-    }
-
-    private int getProgressSafe(SeekBar sb) {
-        return sb != null ? sb.getProgress() : prefs.getInt("sens", 50);
     }
 
     private void setTalking(boolean t) {
         talking = t;
         imgTalk.animate().cancel();
         if (t) {
-            // Sesuai permintaan: Gambar idle dibuat INVISIBLE saat gambar bicara aktif
             imgIdle.setVisibility(View.INVISIBLE);
             imgTalk.setVisibility(View.VISIBLE);
             imgTalk.setScaleX(0.93f);
             imgTalk.setScaleY(0.93f);
-            int durationIn = sbIn != null ? sbIn.getProgress() : prefs.getInt("in", 120);
+            int durationIn = prefs.getFadeIn();
             imgTalk.animate().alpha(1f).scaleX(1f).scaleY(1f)
                     .setDuration(durationIn).start();
         } else {
-            int durationOut = sbOut != null ? sbOut.getProgress() : prefs.getInt("out", 250);
+            int durationOut = prefs.getFadeOut();
             imgTalk.animate().alpha(0f).setDuration(durationOut)
                     .withEndAction(() -> {
                         if (!talking) {
@@ -507,7 +528,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         }
     }
 
-    // ------------------------------------------------------------------ Gambar
+    // -------------------------------------------------------- Gambar Avatar
 
     private void importImage(Uri uri, String fileName) {
         ioExecutor.execute(() -> {
@@ -535,8 +556,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
                 runOnUiThread(this::applyImages);
             } catch (Exception e) {
                 FirebaseCrashlytics.getInstance().recordException(e);
-                runOnUiThread(() ->
-                        Toast.makeText(this, "Gagal: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> Toast.makeText(this, "Gagal: " + e.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
     }
@@ -580,15 +600,16 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         return b;
     }
 
-    // ---------------------------------------------------------------- UI helper
+    // -------------------------------------------------------- UI Helpers & Lifecycle
 
     private void applySize() {
-        int progress = sbSize != null ? sbSize.getProgress() : prefs.getInt("size", 80);
+        int progress = prefs.getSize();
         float s = (progress + 20) / 100f;
         stage.setScaleX(s);
         stage.setScaleY(s);
     }
 
+    @SuppressLint("SetTextI18n")
     private void updateLabels() {
         if (tvSens != null && sbSens != null) {
             tvSens.setText("Sensitivitas mulut: " + sbSens.getProgress() + "  (naikkan jika animasi sulit muncul)");
@@ -604,9 +625,9 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
         }
     }
 
-    private void bindSeek(SeekBar sb, OnValue cb) {
+    private void bindSeek(SeekBar sb, OnSeekBarChangeCallback cb) {
         sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) { cb.on(p); }
+            @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) { cb.onChange(p); }
             @Override public void onStartTrackingTouch(SeekBar s) { }
             @Override public void onStopTrackingTouch(SeekBar s) { }
         });
@@ -630,7 +651,7 @@ public class MainActivity extends AppCompatActivity implements MouthAnalyzer.Lis
     protected void onResume() {
         super.onResume();
         hideSystemUI();
-        if (bgMode == BG_MODE_VIDEO && bgVideoView != null && !bgVideoView.isPlaying()) {
+        if (prefs.getBgMode() == BG_MODE_VIDEO && bgVideoView != null && !bgVideoView.isPlaying()) {
             applyBg();
         }
     }

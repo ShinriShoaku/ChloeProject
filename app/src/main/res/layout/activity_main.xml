@@ -15,7 +15,7 @@
         android:visibility="gone" />
 
     <!-- Custom Background: Video -->
-    <VideoView
+    <ame.project.chloeproject.FullScreenVideoView
         android:id="@+id/bgVideoView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

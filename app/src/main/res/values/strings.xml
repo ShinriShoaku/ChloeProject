@@ -1,3 +1,13 @@
 <resources>
     <string name="app_name">Chloe Project</string>
+    <string name="splash_subtitle">Realtime Avatar Motion Detector</string>
+    <string name="splash_checking_permission">Memeriksa izin kamera&#8230;</string>
+    <string name="splash_requesting_permission">Meminta izin kamera&#8230;</string>
+    <string name="splash_permission_granted">Izin disetujui. Mempersiapkan avatar&#8230;</string>
+    <string name="splash_permission_denied">Izin kamera diperlukan untuk menggunakan aplikasi ini.</string>
+    <string name="splash_grant_permission">Izinkan Kamera</string>
+    <string name="splash_version">v2.0</string>
+    <string name="bg_active_image">BG Aktif: Gambar Custom</string>
+    <string name="bg_active_video">BG Aktif: Video Custom (Loop)</string>
+    <string name="bg_active_color">BG Aktif: Warna %1$s</string>
 </resources>

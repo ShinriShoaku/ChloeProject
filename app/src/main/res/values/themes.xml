@@ -12,6 +12,7 @@
         <!-- Status bar color. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowFullscreen">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
     </style>
     <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowFullscreen">true</item>
