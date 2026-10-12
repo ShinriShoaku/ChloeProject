@@ -1,11 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#00FF00">
 
-    <!-- Panggung animasi (ukuran diatur lewat slider) -->
+    <!-- Custom Background: Gambar -->
+    <ImageView
+        android:id="@+id/bgImageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
+    <!-- Custom Background: Video -->
+    <VideoView
+        android:id="@+id/bgVideoView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <!-- Panggung animasi (ukuran & posisi diatur lewat drag / settings) -->
     <FrameLayout
         android:id="@+id/stage"
         android:layout_width="match_parent"
@@ -45,137 +62,18 @@
         android:textColor="#FFFFFF"
         android:textSize="12sp" />
 
-    <!-- Panel kontrol: tap area animasi untuk sembunyikan/tampilkan -->
-    <ScrollView
-        android:id="@+id/panel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="#CC000000">
+    <!-- Tombol Pengaturan Buka BottomSheet -->
+    <ImageButton
+        android:id="@+id/btnOpenSettings"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:background="@drawable/bg_bottom_sheet"
+        android:contentDescription="Pengaturan"
+        android:padding="10dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/drop_down"
+        app:tint="#FFFFFF" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="10dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnTalk"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Gambar Bicara"
-                    android:textAllCaps="false"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btnIdle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Gambar Idle"
-                    android:textAllCaps="false"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btnReset"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Reset Gambar"
-                    android:textAllCaps="false"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnCamera"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Ganti Kamera"
-                    android:textAllCaps="false"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btnBg"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Warna BG"
-                    android:textAllCaps="false"
-                    android:textSize="11sp" />
-
-                <Button
-                    android:id="@+id/btnPreview"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Preview Kamera"
-                    android:textAllCaps="false"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/tvSens"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp" />
-
-            <SeekBar
-                android:id="@+id/sbSens"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="100" />
-
-            <TextView
-                android:id="@+id/tvSize"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp" />
-
-            <SeekBar
-                android:id="@+id/sbSize"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="180" />
-
-            <TextView
-                android:id="@+id/tvIn"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp" />
-
-            <SeekBar
-                android:id="@+id/sbIn"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="500" />
-
-            <TextView
-                android:id="@+id/tvOut"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp" />
-
-            <SeekBar
-                android:id="@+id/sbOut"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="1000" />
-        </LinearLayout>
-    </ScrollView>
 </FrameLayout>
